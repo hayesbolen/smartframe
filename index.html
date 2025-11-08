@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquid Glass Smart Frame</title>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function LiquidGlassFrame() {
+            const [time, setTime] = useState(new Date());
+            const [showSetup, setShowSetup] = useState(true);
+            const [apiKey, setApiKey] = useState('');
+            const [city, setCity] = useState('London');
+            const [currentWeather, setCurrentWeather] = useState(null);
+            const [forecast, setForecast] = useState([]);
+            const [photos, setPhotos] = useState([]);
+            const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+            const [photoFiles, setPhotoFiles] = useState([]);
+
+            const defaultPhotos = [
+                'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800',
+                'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800',
+                'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800',
+                'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800',
+                'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=800'
+            ];
+
+            useEffect(() => {
+                const timer = setInterval(() => setTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            useEffect(() => {
+                if (!showSetup && photos.length > 0) {
+                    const slideTimer = setInterval(() => {
+                        setCurrentPhotoIndex((prev) => (prev + 1) % photos.length);
+                    }, 5000);
+                    return () => clearInterval(slideTimer);
+                }
+            }, [showSetup, photos.length]);
+
+            useEffect(() => {
+                if (!showSetup && apiKey) {
+                    fetchWeather();
+                    const weatherTimer = setInterval(fetchWeather, 600000);
+                    return () => clearInterval(weatherTimer);
+                }
+            }, [showSetup, apiKey, city]);
+
+            // --- NEW: Fullscreen Toggle Function ---
+            const toggleFullscreen = () => {
+                const element = document.body; // Use document.body to include the whole viewport
+                if (!document.fullscreenElement) {
+                    element.requestFullscreen().catch(err => {
+                        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            };
+            // ----------------------------------------
+
+            const getWeatherIcon = (code) => {
+                if (code >= 200 && code < 300) return '⛈️';
+                if (code >= 300 && code < 400) return '🌦️';
+                if (code >= 500 && code < 600) return '🌧️';
+                if (code >= 600 && code < 700) return '❄️';
+                if (code >= 700 && code < 800) return '🌫️';
+                if (code === 800) return '☀️';
+                if (code > 800) return '☁️';
+                return '🌤️';
+            };
+
+            const getWindDirection = (deg) => {
+                const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+                return directions[Math.round(deg / 22.5) % 16];
+            };
+
+            const getUVIndex = () => {
+                const hour = new Date().getHours();
+                if (hour >= 10 && hour <= 14) return Math.floor(Math.random() * 3) + 7;
+                if (hour >= 8 && hour <= 16) return Math.floor(Math.random() * 3) + 4;
+                return Math.floor(Math.random() * 3) + 1;
+            };
+
+            const getUVLevel = (index) => {
+                if (index <= 2) return 'Low';
+                if (index <= 5) return 'Moderate';
+                if (index <= 7) return 'High';
+                if (index <= 10) return 'Very High';
+                return 'Extreme';
+            };
+
+            const fetchWeather = async () => {
+                try {
+                    const currentRes = await fetch(
+                        `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=imperial`
+                    );
+                    const currentData = await currentRes.json();
+                    
+                    if (currentData.cod === 200) {
+                        setCurrentWeather(currentData);
+                    }
+
+                    const forecastRes = await fetch(
+                        `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${apiKey}&units=imperial`
+                    );
+                    const forecastData = await forecastRes.json();
+                    
+                    if (forecastData.cod === "200") {
+                        const dailyData = {};
+                        forecastData.list.forEach(item => {
+                            // Only take one reading per day, typically the earliest one in the list (around midnight or morning).
+                            const date = new Date(item.dt * 1000).toLocaleDateString();
+                            if (!dailyData[date]) {
+                                dailyData[date] = item;
+                            }
+                        });
+                        // Filter out the current day and take the next 7 days for the forecast display
+                        const today = new Date().toLocaleDateString();
+                        const nextSevenDays = Object.values(dailyData).filter(item => new Date(item.dt * 1000).toLocaleDateString() !== today).slice(0, 7);
+                        setForecast(nextSevenDays);
+                    }
+                } catch (error) {
+                    console.error('Weather error:', error);
+                }
+            };
+
+            const handlePhotoUpload = (e) => {
+                const files = Array.from(e.target.files);
+                setPhotoFiles(files);
+                const urls = files.map(file => URL.createObjectURL(file));
+                setPhotos(urls);
+            };
+
+            const startFrame = () => {
+                if (!apiKey.trim()) {
+                    alert('Please enter your OpenWeatherMap API key');
+                    return;
+                }
+                if (photos.length === 0) {
+                    setPhotos(defaultPhotos);
+                }
+                setShowSetup(false);
+            };
+
+            const timeStr = time.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: true 
+            });
+
+            const dateStr = time.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+
+            if (showSetup) {
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+                        <div className="bg-white p-10 rounded-3xl max-w-md w-full mx-4">
+                            <h2 className="text-3xl font-bold mb-6 text-gray-800">Setup Smart Frame</h2>
+                            
+                            <div className="mb-5">
+                                <label className="block mb-2 text-gray-700 font-medium">
+                                    OpenWeatherMap API Key:
+                                </label>
+                                <input
+                                    type="text"
+                                    value={apiKey}
+                                    onChange={(e) => setApiKey(e.target.value)}
+                                    placeholder="Enter your API key"
+                                    className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                                />
+                            </div>
+
+                            <div className="mb-5">
+                                <label className="block mb-2 text-gray-700 font-medium">
+                                    City:
+                                </label>
+                                <input
+                                    type="text"
+                                    value={city}
+                                    onChange={(e) => setCity(e.target.value)}
+                                    placeholder="e.g., London"
+                                    className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                                />
+                            </div>
+
+                            <div className="mb-5">
+                                <label className="block mb-2 text-gray-700 font-medium">
+                                    Upload Photos:
+                                </label>
+                                <label className="block p-4 bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:bg-gray-200 hover:border-purple-500 transition">
+                                    Choose photos for slideshow
+                                    <input
+                                        type="file"
+                                        multiple
+                                        accept="image/*"
+                                        onChange={handlePhotoUpload}
+                                        className="hidden"
+                                    />
+                                </label>
+                                {photoFiles.length > 0 && (
+                                    <div className="mt-2 text-center text-gray-600">
+                                        {photoFiles.length} photo{photoFiles.length !== 1 ? 's' : ''} selected
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={startFrame}
+                                className="w-full p-4 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg font-semibold hover:opacity-90 transition"
+                            >
+                                Start Smart Frame
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="w-screen h-screen bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 p-5 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_1fr_350px] grid-rows-[auto_1fr_auto] gap-5 h-full">
+                        {/* Time & Date with Sunrise/Sunset */}
+                        <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl border border-white border-opacity-30 shadow-2xl p-8 flex flex-col items-center justify-center col-span-2 relative">
+                            {/* --- Fullscreen Button Added Here --- */}
+                            <button
+                                onClick={toggleFullscreen}
+                                className="absolute top-5 right-5 p-2 bg-white bg-opacity-30 rounded-full text-white hover:bg-opacity-50 transition"
+                                title="Toggle Fullscreen"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5m0 0v10m0-10l5 5m-5 5H9m0 0v-4m0 4l-5-5m5 5v4m0-4h4" />
+                                </svg>
+                            </button>
+                            {/* ------------------------------------ */}
+                            <div className="text-7xl font-light text-white tracking-wider">{timeStr}</div>
+                            <div className="text-2xl text-white text-opacity-90 mt-3">{dateStr}</div>
+                            {currentWeather && (
+                                <div className="flex gap-8 mt-6">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-3xl">🌅</span>
+                                        <div className="text-left">
+                                            <div className="text-xs text-white text-opacity-70 uppercase">Sunrise</div>
+                                            <div className="text-lg text-white font-medium">
+                                                {new Date(currentWeather.sys.sunrise * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-3xl">🌇</span>
+                                        <div className="text-left">
+                                            <div className="text-xs text-white text-opacity-70 uppercase">Sunset</div>
+                                            <div className="text-lg text-white font-medium">
+                                                {new Date(currentWeather.sys.sunset * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        
+
+                        
+
+                        {/* Current Weather - YELLOW AREA */}
+                        <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl border border-white border-opacity-30 shadow-2xl p-8 flex flex-col items-center justify-center">
+                            <div className="text-8xl mb-5">
+                                {currentWeather ? getWeatherIcon(currentWeather.weather[0].id) : '🌤️'}
+                            </div>
+                            <div className="text-6xl font-light text-white">
+                                {currentWeather ? Math.round(currentWeather.main.temp) : '--'}°F
+                            </div>
+                            <div className="text-2xl text-white text-opacity-90 mt-3 capitalize">
+                                {currentWeather ? currentWeather.weather[0].description : 'Loading...'}
+                            </div>
+                            <div className="mt-6 text-xl text-white text-opacity-80">
+                                Feels like {currentWeather ? Math.round(currentWeather.main.feels_like) : '--'}°F
+                            </div>
+                        </div>
+
+                        {/* 7-Day Forecast - Bottom spanning all */}
+                        <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl border border-white border-opacity-30 shadow-2xl p-6 col-span-3 overflow-x-auto">
+                            <div className="flex gap-4 justify-around">
+                                {forecast.map((day, index) => {
+                                    const date = new Date(day.dt * 1000);
+                                    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                    return (
+                                        <div key={index} className="flex-1 min-w-[120px] bg-white bg-opacity-10 p-4 rounded-xl text-center">
+                                            <div className="text-sm text-white text-opacity-90 mb-2">{dayName}</div>
+                                            <div className="text-4xl my-2">{getWeatherIcon(day.weather[0].id)}</div>
+                                            <div className="text-lg text-white mt-2">{Math.round(day.main.temp)}°F</div>
+                                            <div className="text-xs text-white text-opacity-80 mt-1">{day.weather[0].main}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Photo Slideshow - GREEN AREA */}
+                        <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl border border-white border-opacity-30 shadow-2xl relative overflow-hidden flex items-center justify-center">
+                            {photos.map((photo, index) => (
+                                <img
+                                    key={index}
+                                    src={photo}
+                                    alt={`Slide ${index + 1}`}
+                                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
+                                        index === currentPhotoIndex ? 'opacity-100' : 'opacity-0'
+                                    }`}
+                                />
+                            ))}
+                        </div>
+
+                        {/* Weather Details - RED AREA */}
+                        <div className="bg-white bg-opacity-20 backdrop-blur-xl rounded-3xl border border-white border-opacity-30 shadow-2xl p-6 flex flex-col gap-4">
+                            {/* Wind */}
+                            <div className="bg-white bg-opacity-15 p-5 rounded-2xl">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-4xl">💨</span>
+                                        <div>
+                                            <div className="text-xs text-white text-opacity-70 uppercase">Wind</div>
+                                            <div className="text-3xl text-white font-light">
+                                                {currentWeather ? Math.round(currentWeather.wind.speed) : '--'} mph
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xs text-white text-opacity-70 uppercase">Direction</div>
+                                        <div className="text-xl text-white">
+                                            {currentWeather ? `${currentWeather.wind.deg}°` : '--'}
+                                        </div>
+                                        <div className="text-lg text-white text-opacity-90">
+                                            {currentWeather ? getWindDirection(currentWeather.wind.deg) : '--'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Humidity */}
+                            <div className="bg-white bg-opacity-15 p-5 rounded-2xl">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <span className="text-3xl">💧</span>
+                                    <div className="text-xs text-white text-opacity-70 uppercase">Humidity</div>
+                                </div>
+                                <div className="text-4xl text-white font-light">
+                                    {currentWeather ? currentWeather.main.humidity : '--'}%
+                                </div>
+                                <div className="mt-3 bg-white bg-opacity-20 rounded-full h-3 overflow-hidden">
+                                    <div 
+                                        className="bg-blue-300 h-full rounded-full transition-all duration-500"
+                                        style={{width: currentWeather ? `${currentWeather.main.humidity}%` : '0%'}}
+                                    ></div>
+                                </div>
+                            </div>
+
+                        </div>
+   
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<LiquidGlassFrame />, document.getElementById('root'));
+    </script>
+</body>
+</html>
